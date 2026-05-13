@@ -1,0 +1,43 @@
+# Heavier UI image that includes Julia + PeePyPoo.
+# First build takes ~15 min and produces a ~3-4 GB image.
+# Subsequent builds are fast because Julia packages are cached in the layer.
+
+FROM python:3.12-slim
+
+# System packages needed by Julia and juliacall
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Julia (adjust version if a newer one is available)
+ENV JULIA_VERSION=1.10.4
+RUN wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-${JULIA_VERSION}-linux-x86_64.tar.gz \
+    && tar -xzf julia-${JULIA_VERSION}-linux-x86_64.tar.gz -C /usr/local --strip-components=1 \
+    && rm julia-${JULIA_VERSION}-linux-x86_64.tar.gz
+
+ENV JULIA_DEPOT_PATH=/root/.julia
+
+WORKDIR /app
+
+COPY requirements_ui.txt .
+RUN pip install --no-cache-dir -r requirements_ui.txt
+
+# Install peepypoo (brings in juliapkg + juliacall)
+RUN pip install --no-cache-dir peepypoo
+
+# Pre-compile Julia packages at build time so the container starts fast.
+# This is the slow step — ModelingToolkit.jl + DifferentialEquations.jl compilation.
+RUN python -c "import juliapkg; juliapkg.resolve()" \
+    && python -c "from peepypoo.ProcessElements import CSTR, ASM1, Aeration, Influent; print('PeePyPoo OK')"
+
+COPY streamlit_app.py peepypoo_sim.py api_client.py ./
+
+COPY wwtp_rnn_mlflow/wwtp_rnn_bundle/mlruns/248838729491991513/1ea0da5dd20549dea78db1770a219acb/artifacts/RNN_e50_b100_lb8_scalers.joblib \
+     /app/scalers.joblib
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "streamlit_app.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true"]

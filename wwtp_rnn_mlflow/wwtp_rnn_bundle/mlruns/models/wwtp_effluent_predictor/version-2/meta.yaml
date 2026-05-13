@@ -1,0 +1,16 @@
+creation_timestamp: 1778574091007
+current_stage: None
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1778574091007
+model_id: m-f6e64fbf86cf45c9a4810ed2c6929984
+name: wwtp_effluent_predictor
+run_id: 8b66f92aef9849d699b5577cba5bebbb
+run_link: null
+source: models:/m-f6e64fbf86cf45c9a4810ed2c6929984
+status: READY
+status_message: null
+storage_location: file:///home/claude/wwtp_rnn/mlruns/248838729491991513/models/m-f6e64fbf86cf45c9a4810ed2c6929984/artifacts
+user_id: null
+version: 2
+workspace: default

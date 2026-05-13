@@ -1,0 +1,31 @@
+{
+  "results": [
+    {
+      "run_id": "1ea0da5dd20549dea78db1770a219acb",
+      "run_name": "RNN_e50_b100_lb8",
+      "architecture": "rnn",
+      "metrics": {
+        "rmse": 0.45411385140146915,
+        "mae": 0.2716577649116516,
+        "r2": -0.08456218242645264
+      },
+      "train_seconds": 63.08370757102966
+    },
+    {
+      "run_id": "8b66f92aef9849d699b5577cba5bebbb",
+      "run_name": "LSTM_e50_b100_lb8",
+      "architecture": "lstm",
+      "metrics": {
+        "rmse": 0.4103633902514204,
+        "mae": 0.3222000300884247,
+        "r2": 0.11434996128082275
+      },
+      "train_seconds": 66.90066003799438
+    }
+  ],
+  "best_run_id": "8b66f92aef9849d699b5577cba5bebbb",
+  "best_architecture": "lstm",
+  "registered_model": "wwtp_effluent_predictor",
+  "registered_version": 2,
+  "model_uri": "runs:/8b66f92aef9849d699b5577cba5bebbb/model"
+}

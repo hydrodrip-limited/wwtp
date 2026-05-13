@@ -1,0 +1,14 @@
+artifact_uri: file:///home/claude/wwtp_rnn/mlruns/248838729491991513/1ea0da5dd20549dea78db1770a219acb/artifacts
+end_time: 1778574013909
+entry_point_name: ''
+experiment_id: '248838729491991513'
+lifecycle_stage: active
+run_id: 1ea0da5dd20549dea78db1770a219acb
+run_name: RNN_e50_b100_lb8
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1778573940012
+status: 3
+tags: []
+user_id: root

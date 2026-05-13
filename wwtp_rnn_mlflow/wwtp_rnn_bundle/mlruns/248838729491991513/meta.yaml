@@ -1,0 +1,8 @@
+artifact_location: file:///home/claude/wwtp_rnn/mlruns/248838729491991513
+creation_time: 1778573752427
+experiment_id: '248838729491991513'
+last_update_time: 1778573752427
+lifecycle_stage: active
+name: wwtp_effluent_prediction
+trace_location: null
+workspace: default

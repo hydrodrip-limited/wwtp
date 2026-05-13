@@ -1,0 +1,10 @@
+artifact_location: file:///home/claude/wwtp_rnn/mlruns/248838729491991513/models/m-97ee6e1eb4704c3ca290ed267f61300f/artifacts
+creation_timestamp: 1778573894210
+experiment_id: '248838729491991513'
+last_updated_timestamp: 1778573902179
+model_id: m-97ee6e1eb4704c3ca290ed267f61300f
+model_type: null
+name: model
+source_run_id: c4e20936d620458b8d508f43d42e572d
+status: 2
+status_message: null

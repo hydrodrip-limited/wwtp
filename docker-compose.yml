@@ -1,0 +1,27 @@
+services:
+  wwtp-rnn:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    ports:
+      - "8501:8501"
+    environment:
+      # Requests go container-to-container via the service name, not localhost
+      - API_URL=http://wwtp-rnn:5000/invocations
+      - SCALERS_PATH=/app/scalers.joblib
+    depends_on:
+      wwtp-rnn:
+        condition: service_healthy
