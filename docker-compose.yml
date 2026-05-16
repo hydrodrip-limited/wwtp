@@ -12,6 +12,8 @@ services:
       retries: 5
       start_period: 30s
 
+  # Lightweight UI — synthetic scipy ODE fallback, no Julia required.
+  # Usage: docker compose up
   ui:
     build:
       context: .
@@ -19,9 +21,35 @@ services:
     ports:
       - "8501:8501"
     environment:
-      # Requests go container-to-container via the service name, not localhost
       - API_URL=http://wwtp-rnn:5000/invocations
       - SCALERS_PATH=/app/scalers.joblib
+    depends_on:
+      wwtp-rnn:
+        condition: service_healthy
+
+  # Full UI with Julia + PeePyPoo ASM1 simulation.
+  # Requires base image built first:
+  #   docker build -f Dockerfile.peepypoo-base -t peepypoo-base:latest .
+  # Then app image builds in ~5 sec:
+  #   docker compose --profile peepypoo build ui-peepypoo
+  # Usage:
+  #   docker compose --profile peepypoo up
+  ui-peepypoo:
+    profiles: ["peepypoo"]
+    build:
+      context: .
+      dockerfile: Dockerfile.ui.peepypoo
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://wwtp-rnn:5000/invocations
+      - SCALERS_PATH=/app/scalers.joblib
+    # Volume mounts: Python files are read live from disk — no rebuild needed
+    # after code changes. Streamlit hot-reloads automatically on file save.
+    volumes:
+      - ./streamlit_app.py:/app/streamlit_app.py:ro
+      - ./peepypoo_sim.py:/app/peepypoo_sim.py:ro
+      - ./api_client.py:/app/api_client.py:ro
     depends_on:
       wwtp-rnn:
         condition: service_healthy

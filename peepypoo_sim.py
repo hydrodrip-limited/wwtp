@@ -160,20 +160,20 @@ def run_simulation(
     3. Solves the ODE over [0, duration_h] hours using Tsit5.
     4. Returns Q_inf, Q_air_1..5, Temp, and NH4 (= S_NH state) as a DataFrame.
 
-    Note on state names
-    -------------------
+    State name note
+    ---------------
     PeePyPoo uses Julia ModelingToolkit namespacing: `reactor₊S_NH` (₊ = U+208A).
-    If your PeePyPoo version uses a different separator (e.g. `.`), adjust the
-    sol["reactor₊S_NH"] lines below accordingly.
+    Older versions may use a dot separator (`reactor.S_NH`).  Both are tried below.
     """
     import numpy as _np
-    from peepypoo.ProcessElements import CSTR, ASM1, Aeration, Influent
-    from peepypoo import ODESystem, ODEProblem, Solvers
-    from peepypoo.Interpolations import Interpolation, LinearInterpolation
+    import peepypoo as ppp
+    from peepypoo.Problems import ODEProblem
+    from peepypoo.Solvers import Solvers
 
-    rng   = _np.random.default_rng(seed)
-    t_s   = _np.linspace(0.0, duration_h * 3600.0, n_steps)
-    noise = q_variation_pct / 100.0
+    rng        = _np.random.default_rng(seed)
+    duration_s = duration_h * 3600.0
+    t_s        = _np.linspace(0.0, duration_s, n_steps)
+    noise      = q_variation_pct / 100.0
 
     q_inf_vals = (
         q_inf_base * (1 + noise * _np.sin(2 * _np.pi * t_s / 86400))
@@ -186,59 +186,101 @@ def run_simulation(
     q_inf_vals = _np.clip(q_inf_vals, 500.0,  8000.0)
     q_air_vals = _np.clip(q_air_vals, 200.0, 10000.0)
 
-    # k_La from Q_air: linear proxy (alpha scales by reactor size)
-    alpha     = 0.003 / (V_m3 / 1000.0)
-    kLa_vals  = (q_air_vals * 5 * alpha).tolist()
+    # Mean k_La from aeration rate over the simulation window.
+    alpha    = 0.003 / (V_m3 / 1000.0)
+    kLa_mean = float(_np.mean(q_air_vals * 5 * alpha))
+    kLa_mean = max(0.01, kLa_mean)
 
-    q_inf_src = Interpolation(
-        LinearInterpolation(q_inf_vals.tolist(), t_s.tolist()), name="q_inf_src"
-    )
-    kLa_src   = Interpolation(
-        LinearInterpolation(kLa_vals, t_s.tolist()), name="kLa_src"
-    )
-
-    influent = Influent(sources=q_inf_src, name="influent")
-    aeration = Aeration(k_La=kLa_src, name="aeration")
-    reactor  = CSTR(
-        V=V_m3 * 1000,  # PeePyPoo uses litres internally
-        processes=[ASM1(temperature=temp_c), aeration],
-        name="reactor",
+    influent = ppp.InfluentFractionation.ASM1_original(
+        Q=float(q_inf_base),
+        COD=430.0,
+        NH4=31.56,
+        Ntot=51.2,
+        name="influent",
     )
 
-    sys     = ODESystem([influent, reactor])
-    simp    = sys.structural_simplify()
-    problem = ODEProblem(simp, tspan=(0.0, duration_h * 3600.0))
-    sol     = problem.solve(
-        algorithm=Solvers.Tsit5(),
-        saveat=duration_h * 3600.0 / n_steps,
+    # "reactor" is an internal namespace in BioChemicalTreatment.jl — naming the
+    # CSTR "reactor" causes a self-referential AttributeError in System.__init__.
+    # Aeration() takes no k_La in its constructor; k_La must be supplied as an
+    # exogenous input connected via ppp.Constant → cstr.exogenous_inputs(...).
+    # initial_states must be provided: defaults are all-zero which gives
+    # norm(u0)=0 and norm(f0)=0 → dt=0/0=NaN on solver startup.
+    # 14 values = 13 ASM1 states + S_N2 (BioChemicalTreatment.jl extended model).
+    aeration = ppp.Aeration(name="aeration")
+    cstr = ppp.CSTR(
+        V_m3 * 1000.0,
+        processes=[ppp.ASM1(name="asm1", temperature=temp_c), aeration],
+        initial_states=[1.0] * 14,
+        name="cstr",
+    )
+    aeration_ctrl = ppp.Constant(k=kLa_mean, name="aeration_ctrl")
+
+    model = ppp.SystemConnection(name="model")
+    model.connect(influent.outflows(0), cstr.inflows(0))
+    model.connect(aeration_ctrl.output, cstr.exogenous_inputs("processes+aeration+k_La"))
+
+    simplified = model.structural_simplify()
+    problem    = ODEProblem(simplified, tspan=(0.0, duration_s))
+    # ASM1 is stiff — Tsit5 (explicit, non-stiff) fails to auto-select an initial
+    # dt when derivative norms are extreme. Rodas5 (implicit stiff Rosenbrock)
+    # uses Jacobian-based step control and handles ASM1's timescale spread.
+    sol        = problem.solve(
+        alg=Solvers.Rodas5(),
+        saveat=duration_s / n_steps,
         abstol=1e-6,
         reltol=1e-3,
     )
 
     if not sol.successful:
-        raise RuntimeError("PeePyPoo ODE solve did not converge.")
+        raise RuntimeError(f"PeePyPoo ODE solve failed: retcode={sol.retcode}")
 
-    t_out  = _np.array(sol.t)
-    nh4    = _np.array(sol["reactor₊S_NH"])
+    t_out = _np.array(list(sol.t))
 
-    # Interpolate Q_inf / Q_air back onto the saved time points
+    # Use sol.u positional indexing — avoids sol[sym] / sol[string] which both
+    # trip over ModelingToolkit's internal symbol resolution.
+    # sol.u is a list of 1-D state arrays (one per saved timestep);
+    # unknowns_ gives the state ordering.
+    nh4 = None
+    unknowns = list(simplified.unknowns)
+    nh4_idx  = next((i for i, u in enumerate(unknowns) if "S_NH" in str(u)), None)
+
+    if nh4_idx is not None:
+        try:
+            nh4 = _np.array([float(state[nh4_idx]) for state in sol.u])
+        except BaseException:
+            nh4 = None
+
+    # String-key fallback for older PeePyPoo versions.
+    if nh4 is None:
+        for key in ("cstr₊asm1₊S_NH", "asm1₊S_NH", "model₊cstr₊asm1₊S_NH",
+                    "cstr₊S_NH", "S_NH"):
+            try:
+                nh4 = _np.array(sol[key])
+                break
+            except BaseException:
+                continue
+
+    if nh4 is None:
+        raise RuntimeError(
+            f"S_NH not found in solution. "
+            f"Available unknowns: {[str(u) for u in unknowns]}"
+        )
+
     from scipy.interpolate import interp1d
     qi_fn = interp1d(t_s, q_inf_vals, fill_value="extrapolate")
     qa_fn = interp1d(t_s, q_air_vals, fill_value="extrapolate")
-    qi_out = qi_fn(t_out)
-    qa_out = qa_fn(t_out)
 
     zf = _np.array([0.19, 0.20, 0.21, 0.20, 0.20])
     mu = zf.mean()
 
     return pd.DataFrame({
         "time_h":        t_out / 3600.0,
-        "Q_inf":         qi_out,
-        "Q_air_1":       qa_out * zf[0] / mu,
-        "Q_air_2":       qa_out * zf[1] / mu,
-        "Q_air_3":       qa_out * zf[2] / mu,
-        "Q_air_4":       qa_out * zf[3] / mu,
-        "Q_air_5":       qa_out * zf[4] / mu,
+        "Q_inf":         qi_fn(t_out),
+        "Q_air_1":       qa_fn(t_out) * zf[0] / mu,
+        "Q_air_2":       qa_fn(t_out) * zf[1] / mu,
+        "Q_air_3":       qa_fn(t_out) * zf[2] / mu,
+        "Q_air_4":       qa_fn(t_out) * zf[3] / mu,
+        "Q_air_5":       qa_fn(t_out) * zf[4] / mu,
         "Temp":          temp_c,
         "NH4_simulated": nh4,
     })
