@@ -10,7 +10,7 @@ run_link: null
 source: models:/m-16886e19e7234955b0abce7aaf62a37e
 status: READY
 status_message: null
-storage_location: file:///home/claude/wwtp_rnn/mlruns/248838729491991513/models/m-16886e19e7234955b0abce7aaf62a37e/artifacts
+storage_location: file:///app/mlruns/248838729491991513/models/m-16886e19e7234955b0abce7aaf62a37e/artifacts
 user_id: null
 version: 1
 workspace: default

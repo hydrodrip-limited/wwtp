@@ -1,0 +1,51 @@
+# Git
+.git/
+.gitignore
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing & coverage
+htmlcov/
+.coverage
+coverage.xml
+*.log
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets
+.env
+*.env
+
+# Development-only files
+tests/
+.pre-commit-config.yaml
+CODE_REVIEW.md
+scripts/
+
+# MLflow runs (mounted as volume at runtime — not baked into image)
+mlruns/
+
+# Large artifacts — ship only the specific .joblib via COPY
+# wwtp_rnn_mlflow/wwtp_rnn_bundle/mlruns/
+wwtp_rnn_mlflow.zip
+RNN_e50_b100_lb8_prediction.png
+evaluation_predictions.csv

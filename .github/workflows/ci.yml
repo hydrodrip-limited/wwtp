@@ -1,0 +1,113 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CI — Quality Gate
+# ─────────────────────────────────────────────────────────────────────────────
+# Three jobs run on every push / pull-request:
+#
+#   lint      : ruff (format + lint) + mypy (strict)
+#   unit      : fast pytest unit tests with coverage gate ≥ 80 %
+#   integration: full pipeline test (2-epoch train + pyfunc round-trip)
+#                only runs on push to main to save CI minutes
+#
+# Secrets required: none for open-source CI.
+# Optional: set MLFLOW_TRACKING_URI in repository secrets to use a remote
+#           tracking server instead of the local file store used here.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ─── 1. Lint ──────────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dev dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ".[dev]"
+
+      - name: ruff — format check
+        run: ruff format --check src tests
+
+      - name: ruff — lint
+        run: ruff check src tests
+
+      - name: mypy — strict type check
+        run: mypy --config-file pyproject.toml src/wwtp
+
+  # ─── 2. Unit tests ────────────────────────────────────────────────────────
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dev dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ".[dev]"
+
+      - name: Run unit tests with coverage
+        run: |
+          pytest tests/unit \
+            --cov=wwtp \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            -v
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  # ─── 3. Integration tests (main branch only) ──────────────────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dev dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ".[dev]"
+
+      - name: Run integration tests
+        env:
+          MLFLOW_TRACKING_URI: "file:./mlruns"
+        run: |
+          pytest tests/integration \
+            -m integration \
+            -v \
+            --timeout=300
