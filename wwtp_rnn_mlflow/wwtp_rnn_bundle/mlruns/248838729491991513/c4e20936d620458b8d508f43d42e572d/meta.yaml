@@ -1,4 +1,4 @@
-artifact_uri: file:///home/claude/wwtp_rnn/mlruns/248838729491991513/c4e20936d620458b8d508f43d42e572d/artifacts
+artifact_uri: file:///app/mlruns/248838729491991513/c4e20936d620458b8d508f43d42e572d/artifacts
 end_time: 1778573902182
 entry_point_name: ''
 experiment_id: '248838729491991513'

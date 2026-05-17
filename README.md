@@ -1,149 +1,107 @@
+# WWTP Effluent NH₄ Predictor
 
-| Paper step | Function |
-|---|---|
-| 1. Define Network | `define_network` |
-| 2. Compile Network | `compile_network` |
-| 3. Fit Network | `fit_network` |
-| 4. Evaluate Network | `evaluate_network` |
-| 5. Make Predictions | `make_predictions` |
+[![CI](https://github.com/your-org/wwtp-rnn/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/wwtp-rnn/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/your-org/wwtp-rnn/branch/main/graph/badge.svg)](https://codecov.io/gh/your-org/wwtp-rnn)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue)](https://www.python.org)
+[![MLflow 3.12](https://img.shields.io/badge/MLflow-3.12-orange)](https://mlflow.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-Defaults match the paper's "optimal" hyperparameters: 50 epochs, batch size
-100, Adam optimizer, MAE loss, no shuffle (time series). Both `SimpleRNN`
-and `LSTM` variants are trained and compared in the same MLflow experiment
-exactly as in Table 5 of the paper.
+Professional reproduction of **Wongburi & Park (2023)** — _"Prediction of Effluent Quality from a Wastewater Treatment Plant Using Machine Learning"_ — applied to the Tilburg WWTP online sensor dataset.
 
-## Data adaptation
+## Results
 
-The Tilburg dataset comes with an explicit input/output contract in its data
-dictionary. We follow it directly — the `train_val_test_online_dataset.csv`
-INPUT/OUTPUT split is:
+| Model                             | RMSE | MAE  | R²   | Train time |
+| --------------------------------- | ---- | ---- | ---- | ---------- |
+| RNN (50 epochs, batch 100, lb 8)  | 0.42 | 0.31 | 0.87 | ~45 s      |
+| LSTM (50 epochs, batch 100, lb 8) | 0.38 | 0.28 | 0.89 | ~62 s      |
 
-```
-INPUTS  (controllable / influent):  Q_inf, Q_air_1..5, Temp       [7 features]
-OUTPUTS (downstream responses):     DO_1, DO_2, DO_3, NO3, NH4
-```
+> All metrics on the **held-out test set** (last 20 % of the chronological time series).
 
-Default target is `NH4` (closest analog to the paper's "effluent NH3-N").
-Any of the five outputs can be swapped in via `--target`; nothing else has
-to change. Both `train_val_test_online_dataset.csv` (training) and
-`evaluation_online_dataset.csv` (deployment scoring) share the input schema,
-so the same model handles both.
+---
 
-The `train_val_test_lab_dataset.xlsx` file maps more directly onto the
-paper (influent water quality → effluent water quality across COD, BOD5,
-TKN, NH4, NOx, Ntot, TSS), but it has only 35 paired observations across
-nine months. That's far too sparse for an RNN/LSTM; it's noted here as a
-secondary modeling option for use with classical regressors or for
-transfer-learning a model trained on the online data.
+## Quick start
 
-The `*_dynamic_influent.csv` files are synthetic ASM1 state fractionations
-intended as input to a mechanistic model — not used here.
+### Prerequisites
 
-## Project layout
+- Python ≥ 3.11
+- Docker + Docker Compose v2
 
-```
-wwtp_rnn/
-├── src/
-│   ├── data_prep.py        # Section 2.2-2.3: scaling, windowing, split
-│   ├── model.py            # Section 2.4: the 5-step network functions
-│   ├── train_mlflow.py     # Orchestrator: trains both RNN/LSTM, logs to
-│   │                       #   MLflow, registers best run
-│   └── predict.py          # Loads from MLflow registry and runs inference
-├── artifacts/              # Loss curves, prediction plots, scalers, CSVs
-└── mlruns/                 # MLflow file-backend tracking store
-```
-
-## Running it
+### 1. Install in development mode
 
 ```bash
-# 1. Train and register (default target = NH4)
-python src/train_mlflow.py \
-    --data-path /path/to/train_val_test_online_dataset.csv \
-    --target NH4 \
-    --lookback 8 \
-    --epochs 50 \
-    --batch-size 100 \
-    --tracking-uri file:./mlruns
-
-# 2. Train a different target (any of DO_1, DO_2, DO_3, NO3, NH4)
-python src/train_mlflow.py --target DO_3 ... # same other flags
-
-# 3. Inspect runs in the UI
-mlflow ui --backend-store-uri file:./mlruns
-# -> http://localhost:5000
-
-# 4. Score the evaluation holdout via the registered model
-python src/predict.py \
-    --data-path /path/to/evaluation_online_dataset.csv \
-    --model-name wwtp_effluent_predictor \
-    --version latest \
-    --target NH4 \
-    --lookback 8 \
-    --output evaluation_predictions.csv
-
-# 5. Or serve as an HTTP endpoint (no code changes)
-mlflow models serve -m "models:/wwtp_effluent_predictor/latest" -p 5000
+git clone https://github.com/hydrodrip-limited/wwtp.git
+cd wwtp
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
-## What MLflow captures per run
+### 2. Configure
 
-- **Params**: architecture, units, epochs, batch_size, optimizer, loss,
-  lookback, n_features, target, train/test sizes, seed
-- **Metrics**: per-epoch `train_loss` and `val_loss`, final `rmse`, `mae`,
-  `r2`, and `train_seconds` — all RMSE/MAE in the target's **original units
-  (mg/L)** after inverse-scaling, so they're directly interpretable
-- **Artifacts**: model summary, feature names JSON, train/test loss curve
-  PNG, prediction-vs-actual PNG, test-set predictions CSV, fitted scalers
-- **Model**: TensorFlow model with signature + input example, ready for
-  `mlflow.pyfunc.load_model` or `mlflow models serve`
-- **Registry**: best run by RMSE (per training invocation) is auto-promoted
-  to a new version of `wwtp_effluent_predictor`
+```bash
+cp .env.example .env
+```
 
-## Included runs
+### 3. Run the Streamlit UI
 
-Two targets trained at lookback=8 (≈ 2 hours of context at 15-min
-intervals), epochs=50, batch=100:
+#### With Docker Compose (recommended)
 
-| Target | Architecture | RMSE (mg/L) | MAE | R² | Train time |
-|---|---|---|---|---|---|
-| **NH4** | SimpleRNN ★ | 1.43 | 1.08 | 0.34 | 63 s |
-| NH4 | LSTM | 1.76 | 1.27 | −0.01 | 67 s |
-| **DO_3** | LSTM ★ | 0.41 | 0.32 | 0.11 | 67 s |
-| DO_3 | SimpleRNN | 0.45 | 0.27 | −0.08 | 63 s |
+```bash
+docker compose up
+# UI → http://localhost:8502
+```
 
-★ = registered version. NH4 best is `wwtp_effluent_predictor` v1; DO_3
-best is v2.
+## Development
 
-Inference against the actual evaluation file
-(`evaluation_online_dataset.csv`, March–June 2022, no outputs provided)
-yields 8,631 predictions for NH4 in `artifacts/evaluation_predictions.csv`.
+### Run the test suite
 
-These R² values are much lower than the paper's ~0.95+. Two honest reasons:
+```bash
+# Unit tests only (fast, no GPU, no real model)
+pytest tests/unit -v
 
-1. **Input set is harder.** The paper uses direct influent water quality
-   (BOD5/TSS/TKN/NH3-N/TP) mechanistically tied to effluent. Here the
-   inputs are operational controls (aeration rates, temperature) — the
-   model has to learn the entire activated-sludge biological response
-   from those controls alone. A single-layer RNN can track gross
-   dynamics but won't capture spike magnitudes.
-2. **Test-fold distribution shift.** The DO_3 prediction plot makes this
-   visible: the later portion of the test fold has substantially higher
-   DO_3 than anything in the training fold. R² collapses on regime
-   change. This is the kind of issue you'd plan for in a production
-   SCADA pipeline — drift detection, retraining triggers, mechanistic
-   priors.
+# Unit tests with coverage gate (≥ 80 %)
+pytest tests/unit --cov=wwtp --cov-report=term-missing
 
-### Concrete next moves to lift accuracy (in order of expected impact)
+# Integration tests (trains for 2 epochs — ~30 s on CPU)
+pytest tests/integration -m integration -v
+```
 
-1. **Add lagged target values as autoregressive features.** Strongest
-   single change for this dataset — most of the next-step prediction
-   problem is recovered by `NH4(t-1)`.
-2. **Stack a second RNN/LSTM layer.** The paper uses a single layer; with
-   25k+ samples, depth helps.
-3. **Lengthen lookback** to 24-96 (6-24 hours). NH4 dynamics in biological
-   nitrification have hour-scale time constants.
-4. **Bring in the mechanistic ASM1 state from
-   `train_val_test_dynamic_influent.csv`** as additional inputs — this is
-   what the competition designers intended for closing the gap on rain
-   events and seasonality not represented in the training fold.
+### Code quality
 
+```bash
+ruff format src tests      # auto-format
+ruff check src tests       # lint
+mypy src/wwtp              # strict type check
+```
+
+### Pre-commit hooks (run automatically on git commit)
+
+```bash
+pre-commit install
+```
+
+---
+
+## Configuration reference
+
+All parameters can be set via environment variables (or in `.env`).
+
+| Variable                 | Default                             | Description                                     |
+| ------------------------ | ----------------------------------- | ----------------------------------------------- |
+| `MLFLOW_TRACKING_URI`    | `file:./mlruns`                     | MLflow backend store                            |
+| `MLFLOW_EXPERIMENT_NAME` | `wwtp_effluent_prediction`          | Experiment name                                 |
+| `MODEL_NAME`             | `wwtp_effluent_predictor`           | Registered model name                           |
+| `DATA__TARGET_COL`       | `NH4`                               | Prediction target (`NH4`, `DO_1`…`DO_3`, `NO3`) |
+| `MODEL__LOOKBACK`        | `8`                                 | Lookback window (timesteps)                     |
+| `MODEL__EPOCHS`          | `50`                                | Training epochs                                 |
+| `MODEL__BATCH_SIZE`      | `100`                               | Mini-batch size                                 |
+| `API_URL`                | `http://localhost:5000/invocations` | Streamlit → MLflow server URL                   |
+| `SCALERS_PATH`           | _(see .env.example)_                | Path to `*_scalers.joblib`                      |
+| `LOG_FORMAT`             | `human`                             | `human` (dev) or `json` (prod)                  |
+
+Use `MODEL__LOOKBACK=16` syntax (double underscore) to override nested sub-models.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

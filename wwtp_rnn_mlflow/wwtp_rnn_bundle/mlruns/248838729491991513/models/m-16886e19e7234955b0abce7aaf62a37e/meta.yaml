@@ -1,4 +1,4 @@
-artifact_location: file:///home/claude/wwtp_rnn/mlruns/248838729491991513/models/m-16886e19e7234955b0abce7aaf62a37e/artifacts
+artifact_location: file:///app/mlruns/248838729491991513/models/m-16886e19e7234955b0abce7aaf62a37e/artifacts
 creation_timestamp: 1778573817506
 experiment_id: '248838729491991513'
 last_updated_timestamp: 1778573825120

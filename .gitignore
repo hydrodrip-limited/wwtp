@@ -1,0 +1,39 @@
+# SSH keys
+/hydrodrip
+/hydrodrip.pub
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tools
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Coverage
+htmlcov/
+.coverage
+coverage.xml
+
+# Secrets
+.env
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Large binary artifacts (tracked via Git LFS or excluded intentionally)
+wwtp_rnn_mlflow.zip

@@ -1,36 +1,45 @@
-# Heavier UI image that includes Julia + PeePyPoo.
-# First build takes ~15 min and produces a ~3-4 GB image.
-# Subsequent builds are fast because Julia packages are cached in the layer.
+# Stage 1: Julia + PeePyPoo compilation
+FROM python:3.12-slim AS peepypoo-base
 
-FROM python:3.12-slim
-
-# System packages needed by Julia and juliacall
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget ca-certificates git \
-    && rm -rf /var/lib/apt/lists/*
+     wget ca-certificates git \
+     && rm -rf /var/lib/apt/lists/*
 
-# Install Julia (adjust version if a newer one is available)
 ENV JULIA_VERSION=1.10.4
 RUN wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-${JULIA_VERSION}-linux-x86_64.tar.gz \
-    && tar -xzf julia-${JULIA_VERSION}-linux-x86_64.tar.gz -C /usr/local --strip-components=1 \
-    && rm julia-${JULIA_VERSION}-linux-x86_64.tar.gz
+     && tar -xzf julia-${JULIA_VERSION}-linux-x86_64.tar.gz -C /usr/local --strip-components=1 \
+     && rm julia-${JULIA_VERSION}-linux-x86_64.tar.gz
 
 ENV JULIA_DEPOT_PATH=/root/.julia
 
 WORKDIR /app
 
-COPY requirements_ui.txt .
-RUN pip install --no-cache-dir -r requirements_ui.txt
+RUN pip install --no-cache-dir \
+     streamlit>=1.35.0 \
+     plotly>=5.22.0 \
+     pandas>=2.0.0 \
+     numpy>=1.26.0 \
+     httpx>=0.27.0 \
+     joblib>=1.3.0 \
+     scipy>=1.13.0 \
+     scikit-learn>=1.4.0
 
-# Install peepypoo (brings in juliapkg + juliacall)
-RUN pip install --no-cache-dir peepypoo
+RUN pip install --no-cache-dir git+https://gitlab.com/datinfo/PeePyPoo
 
-# Pre-compile Julia packages at build time so the container starts fast.
-# This is the slow step — ModelingToolkit.jl + DifferentialEquations.jl compilation.
+# Pre-compile Julia packages into the image layer (the slow step).
 RUN python -c "import juliapkg; juliapkg.resolve()" \
-    && python -c "from peepypoo.ProcessElements import CSTR, ASM1, Aeration, Influent; print('PeePyPoo OK')"
+     && python -c "from peepypoo.ProcessElements import CSTR, ASM1, Aeration, Influent; print('PeePyPoo stage OK')"
 
-COPY streamlit_app.py peepypoo_sim.py api_client.py ./
+# Stage 2: application layer
+FROM peepypoo-base AS app
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+RUN pip install --no-cache-dir ".[ui]"
+
+COPY app/streamlit_app.py app/streamlit_app.py ./
 
 COPY wwtp_rnn_mlflow/wwtp_rnn_bundle/mlruns/248838729491991513/1ea0da5dd20549dea78db1770a219acb/artifacts/RNN_e50_b100_lb8_scalers.joblib \
      /app/scalers.joblib
@@ -41,3 +50,4 @@ CMD ["streamlit", "run", "streamlit_app.py", \
      "--server.port=8501", \
      "--server.address=0.0.0.0", \
      "--server.headless=true"]
+

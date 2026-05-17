@@ -242,7 +242,7 @@ with tab3:
     )
 
     try:
-        import peepypoo  # noqa: F401 — only succeeds if Julia+peepypoo are installed
+        import peepypoo  # noqa: F401
         from peepypoo_sim import run_simulation
         sim_backend = "peepypoo"
     except ImportError:

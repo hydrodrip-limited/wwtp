@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "5000:5000"
+    restart: unless-stopped   # Bug #9 fix
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/ping')"]
       interval: 10s
@@ -12,16 +13,19 @@ services:
       retries: 5
       start_period: 30s
 
-  ui:
+  ui-peepypoo:
     build:
       context: .
-      dockerfile: Dockerfile.ui
+      dockerfile: Dockerfile.ui.peepypoo
     ports:
-      - "8501:8501"
+      - "8502:8501"
+    restart: unless-stopped
     environment:
-      # Requests go container-to-container via the service name, not localhost
       - API_URL=http://wwtp-rnn:5000/invocations
       - SCALERS_PATH=/app/scalers.joblib
+    volumes:
+      - ./app/streamlit_app.py:/app/streamlit_app.py:ro
+      - ./app/peepypoo_sim.py:/app/peepypoo_sim.py:ro
     depends_on:
       wwtp-rnn:
         condition: service_healthy
